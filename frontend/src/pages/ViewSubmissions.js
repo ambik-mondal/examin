@@ -1,0 +1,594 @@
+import React, { useState, useEffect, useCallback } from 'react';
+import { useSearchParams } from 'react-router-dom';
+import { submissionAPI, examAPI } from '../api';
+import {
+  FileText,
+  Calendar,
+  Clock,
+  Filter,
+  Search,
+  Trash2,
+  Building,
+  ShieldCheck,
+  UserCheck
+} from 'lucide-react';
+import { formatDate, getGradeColor, getGradeLetter } from '../utils/helpers';
+import LoadingSpinner from '../components/LoadingSpinner';
+
+const ViewSubmissions = () => {
+  const [searchParams] = useSearchParams();
+  const examId = searchParams.get('examId');
+
+  const [submissions, setSubmissions] = useState([]);
+  const [exams, setExams] = useState([]);
+  const [selectedExam, setSelectedExam] = useState(examId || '');
+  const [searchTerm, setSearchTerm] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  const fetchData = useCallback(async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const [submissionsResponse, examsResponse] = await Promise.all([
+        submissionAPI.getAllSubmissions({ examId: selectedExam, limit: 100 }),
+        examAPI.getExams({ limit: 100 })
+      ]);
+      setSubmissions(submissionsResponse.data.submissions || []);
+      setExams(examsResponse.data.exams || []);
+    } catch (error) {
+      console.error('Error fetching submissions:', error);
+      setError('Failed to load submissions. Please ensure backend server is running and try again.');
+    } finally {
+      setLoading(false);
+    }
+  }, [selectedExam]);
+
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
+
+  const handleDeleteSubmission = async (submissionId, studentName) => {
+    if (window.confirm(`Are you sure you want to delete ${studentName}'s submission? This action cannot be undone.`)) {
+      try {
+        await submissionAPI.deleteSubmission(submissionId);
+        alert('Submission deleted successfully');
+        fetchData(); // Refresh the list
+      } catch (error) {
+        console.error('Error deleting submission:', error);
+        alert(error.response?.data?.message || 'Failed to delete submission');
+      }
+    }
+  };
+
+  const filteredSubmissions = submissions.filter(submission => {
+    if (!submission.exam) return false;
+
+    const studentName = (submission.student?.name || '').toLowerCase();
+    const studentEmail = (submission.student?.email || '').toLowerCase();
+    const studentId = (submission.student?.studentId || '').toLowerCase();
+    const examTitle = (submission.exam?.title || '').toLowerCase();
+    const subject = (submission.exam?.subject || '').toLowerCase();
+    const institution = (submission.exam?.institution || submission.student?.institution || submission.exam?.createdBy?.institution || 'Examin Platform').toLowerCase();
+    const adminName = (submission.exam?.createdBy?.name || '').toLowerCase();
+    const adminId = (submission.exam?.createdBy?.adminId || '').toLowerCase();
+    
+    const search = searchTerm.toLowerCase();
+
+    return studentName.includes(search) ||
+      studentEmail.includes(search) ||
+      studentId.includes(search) ||
+      examTitle.includes(search) ||
+      subject.includes(search) ||
+      institution.includes(search) ||
+      adminName.includes(search) ||
+      adminId.includes(search);
+  });
+
+  if (loading) {
+    return <LoadingSpinner text="Loading submissions..." />;
+  }
+
+  return (
+    <div style={{
+      minHeight: '100vh',
+      backgroundColor: '#f8fafc',
+      padding: '2rem 1rem'
+    }}>
+      <div style={{
+        maxWidth: '1200px',
+        margin: '0 auto'
+      }}>
+        {/* Header */}
+        <div style={{
+          marginBottom: '2rem'
+        }}>
+          <h1 style={{
+            fontSize: '2rem',
+            fontWeight: 'bold',
+            color: '#1f2937',
+            marginBottom: '0.5rem'
+          }}>
+            View Submissions
+          </h1>
+          <p style={{
+            color: '#6b7280',
+            fontSize: '1rem'
+          }}>
+            Monitor and analyze student exam submissions
+          </p>
+        </div>
+
+        {/* Filters */}
+        <div style={{
+          backgroundColor: '#ffffff',
+          borderRadius: '0.5rem',
+          boxShadow: '0 2px 4px rgba(0, 0, 0, 0.1)',
+          border: '1px solid #e5e7eb',
+          marginBottom: '2rem'
+        }}>
+          <div style={{
+            padding: '1.5rem',
+            borderBottom: '1px solid #e5e7eb'
+          }}>
+            <h2 style={{
+              fontSize: '1.25rem',
+              fontWeight: 'bold',
+              color: '#1f2937',
+              display: 'flex',
+              alignItems: 'center'
+            }}>
+              <Filter style={{ width: '1.25rem', height: '1.25rem', marginRight: '0.5rem' }} />
+              Filters
+            </h2>
+          </div>
+
+          <div style={{
+            padding: '1.5rem',
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))',
+            gap: '1rem'
+          }}>
+            <div>
+              <label style={{
+                display: 'block',
+                fontSize: '0.875rem',
+                fontWeight: '500',
+                color: '#374151',
+                marginBottom: '0.5rem'
+              }}>
+                Select Exam
+              </label>
+              <select
+                value={selectedExam}
+                onChange={(e) => setSelectedExam(e.target.value)}
+                style={{
+                  width: '100%',
+                  padding: '0.75rem',
+                  border: '1px solid #d1d5db',
+                  borderRadius: '0.375rem',
+                  fontSize: '0.875rem',
+                  outline: 'none',
+                  backgroundColor: '#ffffff'
+                }}
+              >
+                <option value="">All Exams</option>
+                {exams.map(exam => (
+                  <option key={exam._id} value={exam._id}>
+                    {exam.title} - {exam.subject}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label style={{
+                display: 'block',
+                fontSize: '0.875rem',
+                fontWeight: '500',
+                color: '#374151',
+                marginBottom: '0.5rem'
+              }}>
+                Search Students
+              </label>
+              <div style={{ position: 'relative' }}>
+                <Search style={{
+                  position: 'absolute',
+                  left: '0.75rem',
+                  top: '50%',
+                  transform: 'translateY(-50%)',
+                  width: '1rem',
+                  height: '1rem',
+                  color: '#9ca3af'
+                }} />
+                <input
+                  type="text"
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  style={{
+                    width: '100%',
+                    padding: '0.75rem 0.75rem 0.75rem 2.5rem',
+                    border: '1px solid #d1d5db',
+                    borderRadius: '0.375rem',
+                    fontSize: '0.875rem',
+                    outline: 'none'
+                  }}
+                  placeholder="Search by name, email, or exam"
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Submissions List */}
+        <div style={{
+          backgroundColor: '#ffffff',
+          borderRadius: '0.5rem',
+          boxShadow: '0 2px 4px rgba(0, 0, 0, 0.1)',
+          border: '1px solid #e5e7eb'
+        }}>
+          <div style={{
+            padding: '1.5rem',
+            borderBottom: '1px solid #e5e7eb'
+          }}>
+            <h2 style={{
+              fontSize: '1.25rem',
+              fontWeight: 'bold',
+              color: '#1f2937'
+            }}>
+              Submissions ({filteredSubmissions.length})
+            </h2>
+          </div>
+
+          <div style={{ padding: '1.5rem' }}>
+            {error && (
+              <div style={{
+                backgroundColor: '#fef2f2',
+                border: '1px solid #fecaca',
+                color: '#dc2626',
+                padding: '1rem',
+                borderRadius: '0.375rem',
+                marginBottom: '1rem'
+              }}>
+                {error}
+              </div>
+            )}
+
+            {filteredSubmissions.length === 0 ? (
+              <div style={{
+                textAlign: 'center',
+                padding: '3rem',
+                color: '#6b7280'
+              }}>
+                <FileText style={{
+                  width: '3rem',
+                  height: '3rem',
+                  margin: '0 auto 1rem',
+                  color: '#d1d5db'
+                }} />
+                <h3 style={{
+                  fontSize: '1.125rem',
+                  fontWeight: '500',
+                  marginBottom: '0.5rem'
+                }}>
+                  No submissions found
+                </h3>
+                <p>
+                  {searchTerm ? 'Try adjusting your search criteria.' : 'No students have submitted exams yet.'}
+                </p>
+              </div>
+            ) : (
+              <div style={{
+                overflowX: 'auto'
+              }}>
+                <table style={{
+                  width: '100%',
+                  borderCollapse: 'collapse'
+                }}>
+                  <thead>
+                    <tr style={{
+                      backgroundColor: '#f8fafc',
+                      borderBottom: '1px solid #e5e7eb'
+                    }}>
+                      <th style={{
+                        padding: '0.75rem',
+                        textAlign: 'left',
+                        fontSize: '0.875rem',
+                        fontWeight: '600',
+                        color: '#374151'
+                      }}>
+                        Student
+                      </th>
+                      <th style={{
+                        padding: '0.75rem',
+                        textAlign: 'left',
+                        fontSize: '0.875rem',
+                        fontWeight: '600',
+                        color: '#374151'
+                      }}>
+                        Exam / Subject
+                      </th>
+                      <th style={{
+                        padding: '0.75rem',
+                        textAlign: 'left',
+                        fontSize: '0.875rem',
+                        fontWeight: '600',
+                        color: '#374151'
+                      }}>
+                        Institution
+                      </th>
+                      <th style={{
+                        padding: '0.75rem',
+                        textAlign: 'left',
+                        fontSize: '0.875rem',
+                        fontWeight: '600',
+                        color: '#374151'
+                      }}>
+                        Assigned Admin
+                      </th>
+                      <th style={{
+                        padding: '0.75rem',
+                        textAlign: 'center',
+                        fontSize: '0.875rem',
+                        fontWeight: '600',
+                        color: '#374151'
+                      }}>
+                        Score / Marks
+                      </th>
+                      <th style={{
+                        padding: '0.75rem',
+                        textAlign: 'center',
+                        fontSize: '0.875rem',
+                        fontWeight: '600',
+                        color: '#374151'
+                      }}>
+                        Grade
+                      </th>
+                      <th style={{
+                        padding: '0.75rem',
+                        textAlign: 'center',
+                        fontSize: '0.875rem',
+                        fontWeight: '600',
+                        color: '#374151'
+                      }}>
+                        Time Taken
+                      </th>
+                      <th style={{
+                        padding: '0.75rem',
+                        textAlign: 'center',
+                        fontSize: '0.875rem',
+                        fontWeight: '600',
+                        color: '#374151'
+                      }}>
+                        Submitted
+                      </th>
+                      <th style={{
+                        padding: '0.75rem',
+                        textAlign: 'center',
+                        fontSize: '0.875rem',
+                        fontWeight: '600',
+                        color: '#374151'
+                      }}>
+                        Actions
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredSubmissions.map((submission) => (
+                      <tr
+                        key={submission._id}
+                        style={{
+                          borderBottom: '1px solid #e5e7eb'
+                        }}
+                      >
+                        {/* Student */}
+                        <td style={{
+                          padding: '0.75rem'
+                        }}>
+                          <div>
+                            <p style={{
+                              fontSize: '0.875rem',
+                              fontWeight: '600',
+                              color: '#1f2937',
+                              margin: 0
+                            }}>
+                              {submission.student?.name || 'Unknown Student'}
+                            </p>
+                            <p style={{
+                              fontSize: '0.75rem',
+                              color: '#6b7280',
+                              margin: '0.15rem 0'
+                            }}>
+                              {submission.student?.email}
+                            </p>
+                            {submission.student?.studentId && (
+                              <span style={{
+                                fontSize: '0.7rem',
+                                backgroundColor: '#f1f5f9',
+                                color: '#475569',
+                                padding: '0.1rem 0.4rem',
+                                borderRadius: '0.25rem',
+                                fontFamily: 'monospace',
+                                fontWeight: '600'
+                              }}>
+                                ID: {submission.student.studentId}
+                              </span>
+                            )}
+                          </div>
+                        </td>
+
+                        {/* Exam / Subject */}
+                        <td style={{
+                          padding: '0.75rem'
+                        }}>
+                          <div>
+                            <p style={{
+                              fontSize: '0.875rem',
+                              fontWeight: '600',
+                              color: '#1f2937',
+                              margin: 0
+                            }}>
+                              {submission.exam?.title || 'Unknown Exam'}
+                            </p>
+                            <span style={{
+                              display: 'inline-block',
+                              marginTop: '0.25rem',
+                              padding: '0.125rem 0.5rem',
+                              backgroundColor: '#dbeafe',
+                              color: '#1e40af',
+                              borderRadius: '0.25rem',
+                              fontSize: '0.75rem',
+                              fontWeight: '600'
+                            }}>
+                              {submission.exam?.subject}
+                            </span>
+                          </div>
+                        </td>
+
+                        {/* Institution */}
+                        <td style={{
+                          padding: '0.75rem'
+                        }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                            <Building size={14} style={{ color: '#059669', flexShrink: 0 }} />
+                            <span style={{
+                              fontSize: '0.825rem',
+                              fontWeight: '600',
+                              color: '#065f46',
+                              backgroundColor: '#dcfce7',
+                              padding: '0.2rem 0.55rem',
+                              borderRadius: '0.375rem',
+                              display: 'inline-block'
+                            }}>
+                              {submission.exam?.institution || submission.student?.institution || submission.exam?.createdBy?.institution || 'Examin Platform'}
+                            </span>
+                          </div>
+                        </td>
+
+                        {/* Assigned Admin */}
+                        <td style={{
+                          padding: '0.75rem'
+                        }}>
+                          <div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                              <ShieldCheck size={14} style={{ color: '#2563eb', flexShrink: 0 }} />
+                              <span style={{ fontSize: '0.85rem', fontWeight: '600', color: '#1e293b' }}>
+                                {submission.exam?.createdBy?.name || 'Super Admin'}
+                              </span>
+                            </div>
+                            <p style={{ fontSize: '0.75rem', color: '#64748b', margin: '0.15rem 0 0 1.25rem' }}>
+                              {submission.exam?.createdBy?.adminId ? `Admin ID: ${submission.exam.createdBy.adminId}` : submission.exam?.createdBy?.email || 'System Administrator'}
+                            </p>
+                          </div>
+                        </td>
+                        <td style={{
+                          padding: '0.75rem',
+                          textAlign: 'center'
+                        }}>
+                          <div>
+                            <p style={{
+                              fontSize: '0.875rem',
+                              fontWeight: 'bold',
+                              color: '#1f2937'
+                            }}>
+                              {submission.totalScore}/{submission.totalMarks}
+                            </p>
+                            <p style={{
+                              fontSize: '0.75rem',
+                              fontWeight: 'bold',
+                              color: getGradeColor(submission.percentage)
+                            }}>
+                              {submission.percentage}%
+                            </p>
+                          </div>
+                        </td>
+                        <td style={{
+                          padding: '0.75rem',
+                          textAlign: 'center'
+                        }}>
+                          <span style={{
+                            display: 'inline-block',
+                            padding: '0.25rem 0.5rem',
+                            borderRadius: '9999px',
+                            fontSize: '0.75rem',
+                            fontWeight: 'bold',
+                            backgroundColor: submission.percentage >= 60 ? '#d1fae5' : '#fee2e2',
+                            color: submission.percentage >= 60 ? '#065f46' : '#991b1b'
+                          }}>
+                            {getGradeLetter(submission.percentage)}
+                          </span>
+                        </td>
+                        <td style={{
+                          padding: '0.75rem',
+                          textAlign: 'center'
+                        }}>
+                          <div style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            fontSize: '0.875rem',
+                            color: '#6b7280'
+                          }}>
+                            <Clock style={{
+                              width: '1rem',
+                              height: '1rem',
+                              marginRight: '0.25rem'
+                            }} />
+                            {submission.timeTaken}m
+                          </div>
+                        </td>
+                        <td style={{
+                          padding: '0.75rem',
+                          textAlign: 'center'
+                        }}>
+                          <div style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            fontSize: '0.75rem',
+                            color: '#6b7280'
+                          }}>
+                            <Calendar style={{
+                              width: '1rem',
+                              height: '1rem',
+                              marginRight: '0.25rem'
+                            }} />
+                            {formatDate(submission.createdAt)}
+                          </div>
+                        </td>
+                        <td style={{
+                          padding: '0.75rem',
+                          textAlign: 'center'
+                        }}>
+                          <button
+                            onClick={() => handleDeleteSubmission(submission._id, submission.student.name)}
+                            style={{
+                              background: 'none',
+                              border: 'none',
+                              color: '#ef4444',
+                              cursor: 'pointer',
+                              padding: '0.25rem',
+                              borderRadius: '0.25rem',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              justifyContent: 'center'
+                            }}
+                            title="Delete Submission"
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default ViewSubmissions;
